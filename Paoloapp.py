@@ -1,8 +1,8 @@
 import streamlit as st
 import pandas as pd
 import numpy as np
-import plotly.express as px
-import plotly.graph_objects as go
+import matplotlib.pyplot as plt
+import seaborn as sns
 from sklearn.cluster import KMeans
 from sklearn.preprocessing import StandardScaler, MinMaxScaler, RobustScaler
 from sklearn.decomposition import PCA
@@ -10,6 +10,15 @@ from sklearn.metrics import silhouette_score
 from sklearn.impute import SimpleImputer, KNNImputer
 import warnings
 warnings.filterwarnings('ignore')
+
+# Try to import plotly, fallback to matplotlib if not available
+try:
+    import plotly.express as px
+    import plotly.graph_objects as go
+    PLOTLY_AVAILABLE = True
+except ImportError:
+    PLOTLY_AVAILABLE = False
+    st.warning("⚠️ Plotly non disponibile, uso matplotlib per i grafici")
 
 # Config
 st.set_page_config(page_title="K-Means Student Clustering", page_icon="🎓", layout="wide")
@@ -92,10 +101,17 @@ col1, col2 = st.columns(2)
 with col1:
     st.subheader("📊 Statistiche")
     st.dataframe(df_proc.describe())
+
 with col2:
     st.subheader("🔗 Correlazioni")
-    fig_corr = px.imshow(df_proc.corr(), text_auto=True, title="Matrice Correlazione")
-    st.plotly_chart(fig_corr, use_container_width=True)
+    if PLOTLY_AVAILABLE:
+        fig_corr = px.imshow(df_proc.corr(), text_auto=True, title="Matrice Correlazione")
+        st.plotly_chart(fig_corr, use_container_width=True)
+    else:
+        fig, ax = plt.subplots(figsize=(8, 6))
+        sns.heatmap(df_proc.corr(), annot=True, cmap='coolwarm', center=0, ax=ax)
+        ax.set_title("Matrice Correlazione")
+        st.pyplot(fig)
 
 # Elbow analysis
 @st.cache_data
@@ -114,14 +130,32 @@ if st.button("🔍 Analisi Elbow"):
     
     col1, col2 = st.columns(2)
     with col1:
-        fig_elbow = px.line(x=list(k_range), y=sse, markers=True, title="Elbow Method", 
-                           labels={'x': 'K', 'y': 'SSE'})
-        st.plotly_chart(fig_elbow, use_container_width=True)
+        if PLOTLY_AVAILABLE:
+            fig_elbow = px.line(x=list(k_range), y=sse, markers=True, title="Elbow Method", 
+                               labels={'x': 'K', 'y': 'SSE'})
+            st.plotly_chart(fig_elbow, use_container_width=True)
+        else:
+            fig, ax = plt.subplots(figsize=(8, 5))
+            ax.plot(k_range, sse, 'bo-')
+            ax.set_xlabel('Numero Cluster (k)')
+            ax.set_ylabel('SSE')
+            ax.set_title('Elbow Method')
+            ax.grid(True)
+            st.pyplot(fig)
     
     with col2:
-        fig_sil = px.line(x=list(k_range), y=sil_scores, markers=True, title="Silhouette Score",
-                         labels={'x': 'K', 'y': 'Silhouette'})
-        st.plotly_chart(fig_sil, use_container_width=True)
+        if PLOTLY_AVAILABLE:
+            fig_sil = px.line(x=list(k_range), y=sil_scores, markers=True, title="Silhouette Score",
+                             labels={'x': 'K', 'y': 'Silhouette'})
+            st.plotly_chart(fig_sil, use_container_width=True)
+        else:
+            fig, ax = plt.subplots(figsize=(8, 5))
+            ax.plot(k_range, sil_scores, 'ro-')
+            ax.set_xlabel('Numero Cluster (k)')
+            ax.set_ylabel('Silhouette Score')
+            ax.set_title('Silhouette Score')
+            ax.grid(True)
+            st.pyplot(fig)
     
     best_k = k_range[np.argmax(sil_scores)]
     st.info(f"💡 K ottimale secondo Silhouette: {best_k}")
@@ -170,31 +204,65 @@ if 'results' in st.session_state:
     
     col1, col2 = st.columns(2)
     with col1:
-        fig_pie = px.pie(values=cluster_counts.values, 
-                        names=[f"Cluster {i}" for i in cluster_counts.index],
-                        title="Distribuzione Cluster")
-        st.plotly_chart(fig_pie, use_container_width=True)
+        if PLOTLY_AVAILABLE:
+            fig_pie = px.pie(values=cluster_counts.values, 
+                            names=[f"Cluster {i}" for i in cluster_counts.index],
+                            title="Distribuzione Cluster")
+            st.plotly_chart(fig_pie, use_container_width=True)
+        else:
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.pie(cluster_counts.values, labels=[f"Cluster {i}" for i in cluster_counts.index], 
+                   autopct='%1.1f%%', startangle=90)
+            ax.set_title("Distribuzione Cluster")
+            st.pyplot(fig)
     
     with col2:
-        fig_bar = px.bar(x=[f"Cluster {i}" for i in cluster_counts.index], 
-                        y=cluster_counts.values, title="Studenti per Cluster")
-        st.plotly_chart(fig_bar, use_container_width=True)
+        if PLOTLY_AVAILABLE:
+            fig_bar = px.bar(x=[f"Cluster {i}" for i in cluster_counts.index], 
+                            y=cluster_counts.values, title="Studenti per Cluster")
+            st.plotly_chart(fig_bar, use_container_width=True)
+        else:
+            fig, ax = plt.subplots(figsize=(8, 6))
+            ax.bar([f"Cluster {i}" for i in cluster_counts.index], cluster_counts.values)
+            ax.set_title("Studenti per Cluster")
+            ax.set_ylabel("Numero Studenti")
+            st.pyplot(fig)
     
     # PCA visualization
     if len(features) > 2:
         pca = PCA(n_components=2)
         pca_data = pca.fit_transform(df_proc)
         
-        fig_pca = px.scatter(x=pca_data[:, 0], y=pca_data[:, 1],
-                           color=[f"Cluster {i}" for i in df_results['cluster']],
-                           title=f"PCA Clustering (Var: {pca.explained_variance_ratio_.sum():.1%})")
-        
-        # Add centroids
-        centroids_pca = pca.transform(kmeans.cluster_centers_)
-        fig_pca.add_scatter(x=centroids_pca[:, 0], y=centroids_pca[:, 1],
-                          mode='markers', marker=dict(symbol='x', size=15, color='black'),
-                          name='Centroidi')
-        st.plotly_chart(fig_pca, use_container_width=True)
+        if PLOTLY_AVAILABLE:
+            fig_pca = px.scatter(x=pca_data[:, 0], y=pca_data[:, 1],
+                               color=[f"Cluster {i}" for i in df_results['cluster']],
+                               title=f"PCA Clustering (Var: {pca.explained_variance_ratio_.sum():.1%})")
+            
+            # Add centroids
+            centroids_pca = pca.transform(kmeans.cluster_centers_)
+            fig_pca.add_scatter(x=centroids_pca[:, 0], y=centroids_pca[:, 1],
+                              mode='markers', marker=dict(symbol='x', size=15, color='black'),
+                              name='Centroidi')
+            st.plotly_chart(fig_pca, use_container_width=True)
+        else:
+            fig, ax = plt.subplots(figsize=(10, 8))
+            colors = plt.cm.Set1(np.linspace(0, 1, n_clusters))
+            for i in range(n_clusters):
+                mask = df_results['cluster'] == i
+                ax.scatter(pca_data[mask, 0], pca_data[mask, 1], 
+                          c=[colors[i]], label=f'Cluster {i}', alpha=0.7)
+            
+            # Add centroids
+            centroids_pca = pca.transform(kmeans.cluster_centers_)
+            ax.scatter(centroids_pca[:, 0], centroids_pca[:, 1], 
+                      c='black', marker='x', s=200, linewidths=3, label='Centroidi')
+            
+            ax.set_xlabel('Prima Componente Principale')
+            ax.set_ylabel('Seconda Componente Principale')
+            ax.set_title(f"PCA Clustering (Varianza: {pca.explained_variance_ratio_.sum():.1%})")
+            ax.legend()
+            ax.grid(True, alpha=0.3)
+            st.pyplot(fig)
     
     # Centroids table
     st.subheader("📋 Centroidi")
@@ -205,8 +273,19 @@ if 'results' in st.session_state:
     
     # Quality distribution
     quality_dist = df_results.groupby(['cluster', 'quality']).size().unstack(fill_value=0)
-    fig_quality = px.bar(quality_dist, title="Qualità per Cluster", barmode='stack')
-    st.plotly_chart(fig_quality, use_container_width=True)
+    
+    if PLOTLY_AVAILABLE:
+        fig_quality = px.bar(quality_dist, title="Qualità per Cluster", barmode='stack')
+        st.plotly_chart(fig_quality, use_container_width=True)
+    else:
+        fig, ax = plt.subplots(figsize=(10, 6))
+        quality_dist.plot(kind='bar', stacked=True, ax=ax)
+        ax.set_title("Qualità per Cluster")
+        ax.set_xlabel("Cluster")
+        ax.set_ylabel("Numero Studenti")
+        ax.legend(title="Qualità")
+        plt.xticks(rotation=0)
+        st.pyplot(fig)
     
     # Results table
     st.subheader("📄 Risultati Dettagliati")
@@ -245,3 +324,5 @@ with st.expander("📚 Come Funziona K-Means"):
     Ogni cluster rappresenta un "tipo" di studente con caratteristiche simili.
     La distanza dal centroide indica quanto lo studente è "tipico" del suo gruppo.
     """)
+    
+   
